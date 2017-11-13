@@ -345,75 +345,64 @@ def make_logger(use_syslog=False, debug=False):
     logger.addHandler(handler)
     return logger
 
-### EdgeOS
+### Linux
 
-
-class EdgeOS(object):
+class LinuxOS(object):
     def __init__(self, log):
         self.log = log
 
-    def run(self, *args):
+    def run(self, shellcmd):
         try:
-            return 0, subprocess.check_output(args)
+            # subprocess.check_output(args) ignores stderr, but for some reason
+            # check_output(args, stderr=subprocess.STDOUT) isn't working, at
+            # least when running as a daemon, with the following syslog output:
+            # eap_proxy[nnn]: exception in run line nnn (AttributeError: 'list'
+            #     object has no attribute 'rfind'); restarting in 10 seconds
+            # Workaround by passing the command + arguments as one string and
+            # shell=True to check_output(). Also, validate IF_WAN and IF_ROUTER
+            # when parsing script arguments to prevent shell injection.
+            return 0, subprocess.check_output(shellcmd,
+                                              stderr=subprocess.STDOUT,
+                                              universal_newlines=True,
+                                              shell=True)
         except subprocess.CalledProcessError as ex:
-            self.log.warn("%s exited %d", args, ex.returncode)
+            self.log.warn("%s exited %d", shellcmd, ex.returncode)
             return ex.returncode, ex.output
 
-    def run_vyatta_interfaces(self, name, *args):
-        self.run(
-            "/opt/vyatta/sbin/vyatta-interfaces.pl", "--dev", name, *args)
-
-    def restart_dhclient(self, name):
-        # This isn't working:
-        # self.run_vyatta_interfaces(name, "--dhcp", "release")
-        # self.run_vyatta_interfaces(name, "--dhcp", "renew")
-        # The "renew" command emits:
-        #   eth0.0 is not using DHCP to get an IP address
-        # So we emulate it ourselves.
-        self.stop_dhclient(name)
-        self.start_dhclient(name)
-
-    @staticmethod
-    def dhclient_pathnames(ifname):
-        """Return tuple of (-cf, -pf, and -lf) arg values for dhclient."""
-        filename = ifname.replace('.', '_')
-        return (
-            "/var/run/dhclient_%s.conf" % filename,    # -cf
-            "/var/run/dhclient_%s.pid" % filename,     # -pf
-            "/var/run/dhclient_%s.leases" % filename)  # -lf
-
-    def stop_dhclient(self, ifname):
-        """Stop dhclient on `ifname` interface."""
-        # Emulates vyatta-interfaces.pl's behavior
-        cf, pf, lf = self.dhclient_pathnames(ifname)
-        self.run(
-            "/sbin/dhclient", "-q",
-            "-cf", cf,
-            "-pf", pf,
-            "-lf", lf,
-            "-r", ifname)
-        safe_unlink(pf)
-
-    def start_dhclient(self, ifname):
-        """Start dhclient on `ifname` interface"""
-        # Emulates vyatta-interfaces.pl's behavior
-        cf, pf, lf = self.dhclient_pathnames(ifname)
-        killpidfile(pf, signal.SIGTERM)
-        safe_unlink(pf)
-        self.run(
-            "/sbin/dhclient", "-q", "-nw",
-            "-cf", cf,
-            "-pf", pf,
-            "-lf", lf,
-            ifname)
+    def restart_dhcp_client(self, name):
+        """Restart the system's DHCP client on the `name` interface."""
+        # On Debian, setting an interface to use DHCP in /etc/network/interfaces
+        # makes ifupdown generate the proper commands (including PID, lease, and
+        # DUID file options) for running a supported DHCP client on it from
+        # templates hardcoded into the binary at compile time. Capture them.
+        search = re.compile(r"dhclient|pump|udhcpc|dhcpcd").search
+        def call_ifupdown(ifupdown):  # path to ifupdown binary
+            __, output = self.run("%s --force --verbose --no-act %s" %
+                                  (ifupdown, name))  # prints to stderr
+            client_call = False
+            for line in output.splitlines():
+                if search(line):  # ifupdown would run a DHCP client
+                    self.run(line)
+                    client_call = True
+            if not client_call:
+                self.log.warn("`%s %s` does not run a DHCP client; disable "
+                              "NetworkManager on %s if enabled",
+                              ifupdown,
+                              name,
+                              name)
+                self.log.warn("DHCP client was not restarted on %s", name)
+        call_ifupdown("/sbin/ifdown")  # calling ifupdown as ifdown
+        call_ifupdown("/sbin/ifup")
 
     def setmac(self, ifname, mac):
         """Set interface `ifname` mac to `mac`, which may be either a packed
            string or in "aa:bb:cc:dd:ee:ff" format."""
-        # untested, perhaps I should use /bin/ip or ioctl instead.
         if len(mac) == 6:
             mac = strmac(mac)
-        self.run_vyatta_interfaces(ifname, "--set-mac", mac)
+        # iproute2. ifupdown probably shouldn't apply configs, e.g. if-up.d/*
+        self.run("/bin/ip link set dev %s down" % ifname)
+        self.run("/bin/ip %s hw ether %s" % (ifname, mac))
+        self.run("/bin/ip link set dev %s up" % ifname)
 
     @staticmethod
     def getmac(ifname):
@@ -510,7 +499,7 @@ class EAPProxy(object):
 
     def __init__(self, args, log):
         self.args = args
-        self.os = EdgeOS(log)
+        self.os = LinuxOS(log)
         self.log = log
 
     def proxy_forever(self):
@@ -595,8 +584,8 @@ class EAPProxy(object):
         if not self.should_restart_dhcp(eap):
             return
         if_vlan = self.args.if_wan + ".0"
-        self.log.info("%s: restarting dhclient", if_vlan)
-        self.os.restart_dhclient(if_vlan)
+        self.log.info("%s: restarting DHCP client", if_vlan)
+        self.os.restart_dhcp_client(if_vlan)
 
     def should_restart_dhcp(self, eap):
         if self.args.restart_dhcp and eap.is_success:
