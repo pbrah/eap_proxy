@@ -345,6 +345,64 @@ def make_logger(use_syslog=False, debug=False):
     logger.addHandler(handler)
     return logger
 
+
+def network_interface(ifname, ifdir="/sys/class/net/"):
+    """A `type` for ArgumentParser.add_argument(). Return
+       `ifname` if `ifname` is the name of a physical network
+       interface, else raise argparse.ArgumentTypeError.
+    """
+    # only physical and virtual devices are in /sys/class/net/, no aliases
+    physifs = [name for name in os.listdir(ifdir)
+               if "virtual" not in os.path.realpath(ifdir + name)]
+    if ifname not in physifs:
+        err = (("\"%s\" isn't a physical network interface; "
+                "you probably meant one of: %s") %
+               (ifname, " ".join(sorted(physifs))))
+        raise argparse.ArgumentTypeError(err)
+    return ifname
+
+
+def wan_network_interface(ifname, ifdir="/sys/class/net/"):
+    """Same as network_interface(), but a VLAN called
+       `ifname`.0 must also exist on the interface.
+    """
+    # NOTE: the VLAN doesn't need to be named IF_WAN.0, it just needs to be on
+    # top of IF_WAN with VLAN ID 0. However, Debian autoconfigures VLANs using
+    # /etc/network/if-pre-up.d/vlan, which tries (not always successfully;
+    # "auto eth0.0" results in a VLAN named eth0.0000) to derive underlying
+    # interface, VLAN ID, and name padding arguments for vconfig from things
+    # named <thing>.<digits> it finds in /etc/network/interfaces.
+    #
+    # A workaround is to edit vlan and add a special case exactly matching the
+    # desired VLAN interface name of IF_WAN.0, as in the example below. The
+    # IF_VLAN_RAW_DEVICE line is only necessary if "vlan-raw-device eth0" is
+    # not in the "iface eth0.0 inet dhcp" section in /etc/network/interfaces.
+    #
+    # case "$IFACE" in
+    # [ ... ]
+    #   # for eap_proxy: special case to create eth0.0 properly
+    #   eth0.0)
+    #      vconfig set_name_type DEV_PLUS_VID_NO_PAD
+    #      VLANID=0
+    #      IF_VLAN_RAW_DEVICE=eth0
+    #   ;;
+    # [ ... ]
+    ifname = network_interface(ifname)
+    ifvlan = ifname + ".0"
+    # being sure of VLAN ID would require parsing /proc/net/vlan/config; just
+    # assume it's 0 from the device name and match values of iflink in sysfs
+    # c.f. https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-class-net
+    if ifvlan in os.listdir(ifdir):
+        try:
+            with open(ifdir + ifname + "/iflink") as f, \
+                 open(ifdir + ifvlan + "/iflink") as g:
+                if int(f.readline()) == int(g.readline()):
+                    return ifname
+        except Exception:  # pylint:disable=broad-except
+            pass
+    err = "no VLAN %s exists on interface \"%s\"" % (ifvlan, ifname)
+    raise argparse.ArgumentTypeError(err)
+
 ### Linux
 
 class LinuxOS(object):
@@ -619,9 +677,11 @@ def parse_args():
 
     # interface arguments
     p.add_argument(
-        "if_wan", metavar="IF_WAN", help="interface of the AT&T ONT/WAN")
+        "if_wan", metavar="IF_WAN", help="interface of the AT&T ONT/WAN",
+        type=wan_network_interface)
     p.add_argument(
-        "if_rtr", metavar="IF_ROUTER", help="interface of the AT&T router")
+        "if_rtr", metavar="IF_ROUTER", help="interface of the AT&T router",
+        type=network_interface)
 
     # checking whether WAN is up
     g = p.add_argument_group("checking whether WAN is up")
