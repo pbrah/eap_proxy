@@ -33,8 +33,8 @@ ignoring router packets:
 
 configuring IF_WAN.0 VLAN:
   --restart-dhcp        check whether WAN is up after receiving EAP-Success on
-                        IF_WAN (see --ping-gateway); if not, restart dhclient
-                        on IF_WAN.0
+                        IF_WAN (see --ping-gateway); if not, restart system's
+                        DHCP client on IF_WAN.0
   --set-mac             set IF_WAN.0's MAC (ether) address to router's MAC
                         address
 
@@ -708,7 +708,8 @@ def parse_args():
     g.add_argument(
         "--restart-dhcp", action="store_true", help=
         "check whether WAN is up after receiving EAP-Success on IF_WAN "
-        "(see --ping-gateway); if not, restart dhclient on IF_WAN.0")
+        "(see --ping-gateway); if not, restart system's DHCP client on "
+        "IF_WAN.0")
     g.add_argument(
         "--set-mac", action="store_true", help=
         "set IF_WAN.0's MAC (ether) address to router's MAC address")
