@@ -8,7 +8,7 @@ Inspired by 1x_prox as posted here:
 
 usage: eap_proxy [-h] [--ping-gateway] [--ignore-when-wan-up] [--ignore-start]
                  [--ignore-logoff] [--restart-dhcp] [--set-mac] [--daemon]
-                 [--pidfile PIDFILE] [--syslog] [--promiscuous] [--debug]
+                 [--pidfile [PIDFILE]] [--syslog] [--promiscuous] [--debug]
                  [--debug-packets]
                  IF_WAN IF_ROUTER
 
@@ -40,7 +40,7 @@ configuring IF_WAN.0 VLAN:
 
 daemonization:
   --daemon              become a daemon; implies --syslog
-  --pidfile PIDFILE     record pid to PIDFILE
+  --pidfile [PIDFILE]   record pid to PIDFILE; default: /var/run/eap_proxy.pid
   --syslog              log to syslog instead of stderr
 
 debugging:
@@ -719,7 +719,9 @@ def parse_args():
     g.add_argument(
         "--daemon", action="store_true", help=
         "become a daemon; implies --syslog")
-    g.add_argument("--pidfile", help="record pid to PIDFILE")
+    g.add_argument(
+        "--pidfile", nargs="?", const="/var/run/eap_proxy.pid", help=
+        "record pid to PIDFILE; default: /var/run/eap_proxy.pid")
     g.add_argument(
         "--syslog", action="store_true", help=
         "log to syslog instead of stderr")
