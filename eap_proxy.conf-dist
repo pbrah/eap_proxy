@@ -1,0 +1,38 @@
+### /etc/eap_proxy.conf: configuration file for EAP Proxy
+# See eap_proxy(1) for more information about these options.
+
+### You will probably only need to edit the lines after IF_WAN and IF_ROUTER.
+
+# Required options
+
+# IF_WAN
+wan0
+
+# IF_ROUTER
+rtr0
+
+### You will probably not need to edit anything below this line.
+
+# Checking whether WAN is up
+--ping-gateway
+
+# Ignoring router packets
+--ignore-when-wan-up
+--ignore-start
+--ignore-logoff
+
+# Configuring the IF_WAN.0 VLAN interface
+--restart-dhcp
+--set-mac
+
+# Daemonization (enable only ONE of the --pidfile lines)
+--daemon
+--pidfile
+# --pidfile /path/to/pidfile.pid
+# --pidfile "/path to/pidfile has/spaces.pid"
+ --syslog
+
+# Debugging
+# --promiscuous
+# --debug
+# --debug-packets
