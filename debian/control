@@ -1,0 +1,15 @@
+Source: eap-proxy
+Section: unknown
+Priority: extra
+Maintainer: kangtastic <kangscinate@gmail.com>
+Build-Depends: debhelper (>=9)
+Standards-Version: 3.9.6
+Homepage: https://github.com/kangtastic/eap_proxy/
+#Vcs-Git: git://anonscm.debian.org/collab-maint/eap-proxy.git
+#Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/eap-proxy.git
+
+Package: eap-proxy
+Architecture: all
+Depends: python, ${misc:Depends}
+Description: EAP Proxy
+ EAP Proxy proxies 802.1X EAPOL frames between interfaces.

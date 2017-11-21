@@ -1,0 +1,39 @@
+Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: eap-proxy
+Upstream-Contact: kangtastic <kangscinate@gmail.com>
+Source: https://github.com/kangtastic/eap_proxy/
+
+
+Files: *
+Copyright: 2017 kangtastic <kangscinate@gmail.com>
+License: WTFPL-2+
+
+Files: eap_proxy.py
+Copyright: 2017 Jay Soffian <jaysoffian@gmail.com>
+           2017 kangtastic <kangscinate@gmail.com>
+License: OriginalLicense
+
+Files: eap_tcpdump.sh
+Copyright: 2017 Jay Soffian <jaysoffian@gmail.com>
+License: OriginalLicense
+
+License: WTFPL-2+
+ DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ Version 2, December 2004
+ .
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+ .
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
+ .
+ DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+ TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+ .
+ 0. You just DO WHAT THE FUCK YOU WANT TO.
+
+License: OriginalLicense
+ Placeholder for original author's license, whatever that
+ was intended to be. Covers files forked from original
+ repository and their modifications.
+ See https://github.com/jaysoffian/eap_proxy/.
