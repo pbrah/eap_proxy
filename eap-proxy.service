@@ -1,0 +1,14 @@
+[Unit]
+Description=EAP proxy service
+After=network.target
+
+[Service]
+Type=forking
+Restart=on-failure
+PIDFile=<path to PID file, e.g. /var/run/eap_proxy.pid>
+ExecStart=/usr/sbin/eap_proxy <IF_WAN> <IF_ROUTER> --ping-gateway --ignore-when-wan-up --ignore-start --ignore-logoff --restart-dhcp --set-mac --daemon --pidfile <path to PID file, e.g. /var/run/eap_proxy.pid> --syslog
+
+[Install]
+WantedBy=multi-user.target
+
+
