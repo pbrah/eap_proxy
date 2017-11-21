@@ -1,0 +1,10 @@
+# intermediate Debian package build files
+debian/debhelper-build-stamp
+debian/eap-proxy*
+debian/files
+eap_proxy
+eap_proxy.1.gz
+eap_proxy.conf
+
+# resulting binary package
+dist/*
