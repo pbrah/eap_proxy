@@ -8,13 +8,11 @@ Inspired by 1x_prox as posted here:
 
 This fork has been modified for a regular Debian/Ubuntu/whatever system. It also works with non-Debian-based distributions like RHEL, CentOS, Fedora, etc. just fine, for the most part.
 
-A .deb package is provided.
-
 ## Installation
 Note: The package, initscript, and [`systemd`](https://en.wikipedia.org/wiki/Systemd) .service file are named `eap-proxy`. Everything else is named with an underscore as `eap_proxy`.
 
 ### Debian-based systems
-Download the latest [release](https://github.com/kangtastic/eap_proxy/releases/).
+A .deb package is provided. Download the latest [release](https://github.com/kangtastic/eap_proxy/releases/).
 
 Install the package with `sudo dpkg --install eap-proxy_<version>_all.deb`. Configure your system and set the proxy to start at boot (see [**OPTIONS**](#options), [**CONFIGURATION**](#configuration), [**EXAMPLES**](#examples), and [**USAGE**](#usage)).
 
@@ -26,9 +24,9 @@ If everything worked, you will have connectivity. You can verify that `eap_proxy
 
 (also Debian-based systems if you don't want to store your configuration in `/etc/eap_proxy.conf`, or you don't want to use the package)
 
-All you really need to download is `eap_proxy.py`. Move it somewhere in your path and set it executable with something like `sudo install --owner=root --group=root --mode=0755 eap_proxy.py /usr/sbin/eap_proxy`.
+Assuming you have Python 2 installed, all you really need to download is `eap_proxy.py`. Move it somewhere in your path and set it executable with something like `sudo install --owner=root --group=root --mode=0755 eap_proxy.py /usr/sbin/eap_proxy`.
 
-You will have to handle starting the proxy with the proper options yourself. A .service file for `systemd` is provided in the repository as a model.
+You will have to handle starting the proxy with the proper options yourself. A .service file for `systemd` is [provided in the repository](https://github.com/kangtastic/eap_proxy/blob/master/eap-proxy.service) as a model.
 
 [**--restart-dhcp**](#restartdhcp) will not work. Restart DHCP yourself if needed.
 
