@@ -346,37 +346,34 @@ def make_logger(use_syslog=False, debug=False):
     return logger
 
 
-def network_interface(ifname, ifdir="/sys/class/net/"):
+def network_interface(ifname, sysifdir="/sys/class/net/"):
     """A `type` for ArgumentParser.add_argument(). Return
-       `ifname` if `ifname` is the name of a physical network
+       `ifname` if `ifname` is the name of a network
        interface, else raise argparse.ArgumentTypeError.
     """
     # only physical and virtual devices are in /sys/class/net/, no aliases
-    physifs = [name for name in os.listdir(ifdir)
-               if "virtual" not in os.path.realpath(ifdir + name)]
-    if ifname not in physifs:
-        err = (("\"%s\" isn't a physical network interface; "
+    ifs = [name for name in os.listdir(sysifdir)]
+    if ifname not in ifs:
+        err = (("'%s' isn't a network interface; "
                 "you probably meant one of: %s") %
-               (ifname, " ".join(sorted(physifs))))
+               (ifname, " ".join(sorted(ifs))))
         raise argparse.ArgumentTypeError(err)
     return ifname
 
 
-def wan_network_interface(ifname, ifdir="/sys/class/net/"):
-    """Same as network_interface(), but a VLAN called
-       `ifname`.0 must also exist on the interface.
-    """
-    # NOTE: the VLAN doesn't need to be named IF_WAN.0, it just needs to be on
-    # top of IF_WAN with VLAN ID 0. However, Debian autoconfigures VLANs using
-    # /etc/network/if-pre-up.d/vlan, which tries (not always successfully;
-    # "auto eth0.0" results in a VLAN named eth0.0000) to derive underlying
-    # interface, VLAN ID, and name padding arguments for vconfig from things
-    # named <thing>.<digits> it finds in /etc/network/interfaces.
+    # NOTE: If RG is set to use VLAN ID 0, no VLAN is needed to bypass. If RG
+    # is set to use a nonzero VLAN ID, then a VLAN subinterface with that VLAN
+    # ID must be created on IF_WAN.
     #
-    # A workaround is to edit vlan and add a special case exactly matching the
-    # desired VLAN interface name of IF_WAN.0, as in the example below. The
-    # IF_VLAN_RAW_DEVICE line is only necessary if "vlan-raw-device eth0" is
-    # not in the "iface eth0.0 inet dhcp" section in /etc/network/interfaces.
+    # Debian autoconfigures VLANs using /etc/network/if-pre-up.d/vlan, which
+    # pads VLAN IDs in the resulting interface name by default ("auto eth0.0"
+    # results in a VLAN named eth0.0000, for example) when deriving raw device
+    # name, VLAN ID, and name padding arguments for vconfig from things named
+    # <thing>.<digits> it finds in /etc/network/interfaces.
+    #
+    # If this is not desired, a workaround is to edit vlan and add a special
+    # case exactly matching the desired VLAN interface name, as in the example
+    # below for an interface named eth0.0.
     #
     # case "$IFACE" in
     # [ ... ]
@@ -387,21 +384,38 @@ def wan_network_interface(ifname, ifdir="/sys/class/net/"):
     #      IF_VLAN_RAW_DEVICE=eth0
     #   ;;
     # [ ... ]
-    ifname = network_interface(ifname)
-    ifvlan = ifname + ".0"
-    # being sure of VLAN ID would require parsing /proc/net/vlan/config; just
-    # assume it's 0 from the device name and match values of iflink in sysfs
-    # c.f. https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-class-net
-    if ifvlan in os.listdir(ifdir):
-        try:
-            with open(ifdir + ifname + "/iflink") as f, \
-                 open(ifdir + ifvlan + "/iflink") as g:
-                if int(f.readline()) == int(g.readline()):
-                    return ifname
-        except Exception:  # pylint:disable=broad-except
-            pass
-    err = "no VLAN %s exists on interface \"%s\"" % (ifvlan, ifname)
-    raise argparse.ArgumentTypeError(err)
+def set_vlan(args, vlanconfig="/proc/net/vlan/config"):
+    """Validate and set the name of the VLAN interface from
+       the command-line arguments provided at runtime."""
+    if args.vlan == "none":
+        args.vlan = args.if_wan
+        return
+    # Parse the kernel VLAN configuration in /proc to check if IF_VLAN is
+    # either the VLAN ID or the interface name of an existing VLAN on IF_WAN.
+    # If the former, set IF_VLAN to the interface name of that VLAN.
+    # If parsing failed or IF_VLAN was something else, set IF_VLAN to IF_WAN
+    # and raise EnvironmentError.
+    search = re.compile(r"(\S+)\s*\|\s+(\d+)\s+\|\s+%s" %
+                        args.if_wan).search
+    try:
+        with open(vlanconfig) as f:
+            for line in f:
+                match = search(line)
+                if match:
+                    if args.vlan == match.group(2):
+                        args.vlan = match.group(1)
+                        return
+                    elif args.vlan == match.group(1):
+                        return
+    # pylint:disable=broad-except
+    except Exception:
+        pass
+    err = ("--vlan: '%s' is not the name or the VLAN ID number of an "
+           "existing VLAN subinterface of %s; falling back to use %s as "
+           "IF_VLAN" % (args.vlan, args.if_wan, args.if_wan))
+    args.vlan = args.if_wan
+    raise EnvironmentError(err)
+
 
 ### Linux
 
@@ -417,8 +431,8 @@ class LinuxOS(object):
             # eap_proxy[nnn]: exception in run line nnn (AttributeError: 'list'
             #     object has no attribute 'rfind'); restarting in 10 seconds
             # Workaround by passing the command + arguments as one string and
-            # shell=True to check_output(). Also, validate IF_WAN and IF_ROUTER
-            # when parsing script arguments to prevent shell injection.
+            # shell=True to check_output(). Also, validate IF_WAN, IF_ROUTER and
+            # IF_VLAN when parsing script arguments to prevent shell injection.
             return 0, subprocess.check_output(shellcmd,
                                               stderr=subprocess.STDOUT,
                                               universal_newlines=True,
@@ -652,12 +666,11 @@ class EAPProxy(object):
 
     def check_wan_is_up(self):
         args, log = self.args, self.log
-        if_vlan = args.if_wan + ".0"
-        ipaddr = getifaddr(if_vlan)
+        ipaddr = getifaddr(args.vlan)
         if ipaddr:
-            log.debug("%s: %s", if_vlan, ipaddr)
+            log.debug("%s: %s", args.vlan, ipaddr)
             return self.ping_gateway() if args.ping_gateway else True
-        log.debug("%s: no IP address", if_vlan)
+        log.debug("%s: no IP address", args.vlan)
         return False
 
     def ping_gateway(self):
@@ -677,22 +690,24 @@ def parse_args():
 
     # interface arguments
     p.add_argument(
-        "if_wan", metavar="IF_WAN", help="interface of the AT&T ONT/WAN",
-        type=wan_network_interface)
+        "if_wan", metavar="IF_WAN", help=
+        "interface connected to the WAN uplink",
+        type=network_interface)
     p.add_argument(
-        "if_rtr", metavar="IF_ROUTER", help="interface of the AT&T router",
+        "if_rtr", metavar="IF_ROUTER", help=
+        "interface connected to the ISP router",
         type=network_interface)
 
     # checking whether WAN is up
-    g = p.add_argument_group("checking whether WAN is up")
+    g = p.add_argument_group(" checking whether WAN is up")
     g.add_argument(
         "--ping-gateway", action="store_true", help=
-        "normally the WAN is considered up if IF_WAN.0 has an IP address; "
+        "normally the WAN is considered up if IF_VLAN has an IP address; "
         "this option additionally requires that there is a default route "
         "gateway that responds to a ping")
 
     # ignoring packet options
-    g = p.add_argument_group("ignoring router packets")
+    g = p.add_argument_group(" ignoring router packets")
     g.add_argument(
         "--ignore-when-wan-up", action="store_true", help=
         "ignore router packets when WAN is up (see --ping-gateway)")
@@ -703,19 +718,27 @@ def parse_args():
         "--ignore-logoff", action="store_true", help=
         "always ignore EAPOL-Logoff from router")
 
-    # configuring IF_WAN.0 VLAN options
-    g = p.add_argument_group("configuring IF_WAN.0 VLAN")
+    # configuring VLAN subinterface options
+    g = p.add_argument_group(" configuring VLAN subinterface on IF_WAN")
+    g.add_argument(
+        "--vlan", metavar="IF_VLAN", default="0", help=
+        "VLAN ID or interface name of the VLAN subinterface on IF_WAN "
+        "(e.g. '0' to use IF_WAN.0, 'vlan0' to use vlan0), or 'none' to use "
+        "IF_WAN directly; if --vlan not specified, treated as though it were "
+        "with IF_VLAN of 0")
     g.add_argument(
         "--restart-dhcp", action="store_true", help=
         "check whether WAN is up after receiving EAP-Success on IF_WAN "
-        "(see --ping-gateway); if not, restart system's DHCP client on "
-        "IF_WAN.0")
+        "(see --ping-gateway); if not, restart system's DHCP client on IF_VLAN")
+
+    # setting MAC address options
+    g = p.add_argument_group(" setting MAC address")
     g.add_argument(
         "--set-mac", action="store_true", help=
-        "set IF_WAN.0's MAC (ether) address to router's MAC address")
+        "set IF_WAN and IF_VLAN's MAC (ether) address to router's MAC address")
 
     # daemonization options
-    g = p.add_argument_group("daemonization")
+    g = p.add_argument_group(" daemonization")
     g.add_argument(
         "--daemon", action="store_true", help=
         "become a daemon; implies --syslog")
@@ -727,7 +750,7 @@ def parse_args():
         "log to syslog instead of stderr")
 
     # debugging options
-    g = p.add_argument_group("debugging")
+    g = p.add_argument_group(" debugging")
     g.add_argument(
         "--promiscuous", action="store_true", help=
         "place interfaces into promiscuous mode instead of multicast")
@@ -752,6 +775,11 @@ def parse_args():
 def main():
     args = parse_args()
     log = make_logger(args.syslog, args.debug)
+
+    try:
+        set_vlan(args)
+    except EnvironmentError as ex:
+        log.warning(ex)
 
     if args.pidfile:
         pid = checkpidfile(args.pidfile)
@@ -778,6 +806,9 @@ def main():
             writepidfile(args.pidfile)
         except EnvironmentError:  # pylint:disable=broad-except
             log.exception("could not write pidfile: %s", strexc())
+
+    log.info("starting with interfaces IF_WAN=%s, IF_ROUTER=%s, IF_VLAN=%s" %
+             (args.if_wan, args.if_rtr, args.vlan))
 
     EAPProxy(args, log).proxy_forever()
 
