@@ -263,6 +263,15 @@ def strexc():
         del tb
 
 
+def pidexist(pid):
+    """Return whether `pid` is the PID of a running process."""
+    try:
+        os.kill(int(pid), 0)
+    except OSError as ex:
+        return ex.errno != 3
+    return True
+
+
 def killpidfile(pidfile, signum):
     """Send `signum` to PID recorded in `pidfile`.
        Return PID if successful, else return None.
@@ -441,30 +450,99 @@ class LinuxOS(object):
             self.log.warn("%s exited %d", shellcmd, ex.returncode)
             return ex.returncode, ex.output
 
-    def restart_dhcp_client(self, name):
-        """Restart the system's DHCP client on the `name` interface."""
-        # On Debian, setting an interface to use DHCP in /etc/network/interfaces
-        # makes ifupdown generate the proper commands (including PID, lease, and
-        # DUID file options) for running a supported DHCP client on it from
-        # templates hardcoded into the binary at compile time. Capture them.
-        search = re.compile(r"dhclient|pump|udhcpc|dhcpcd").search
-        def call_ifupdown(ifupdown):  # path to ifupdown binary
-            __, output = self.run("%s --force --verbose --no-act %s" %
-                                  (ifupdown, name))  # prints to stderr
-            client_call = False
-            for line in output.splitlines():
-                if search(line):  # ifupdown would run a DHCP client
-                    self.run(line)
-                    client_call = True
-            if not client_call:
-                self.log.warn("`%s %s` does not run a DHCP client; disable "
-                              "NetworkManager on %s if enabled",
-                              ifupdown,
-                              name,
-                              name)
-                self.log.warn("DHCP client was not restarted on %s", name)
-        call_ifupdown("/sbin/ifdown")  # calling ifupdown as ifdown
-        call_ifupdown("/sbin/ifup")
+    def stop_dhcp_client(self, allinstances, iface):
+        """Stop running instances of DHCP clients on the `iface` interface.
+           Return the number of instances that were stopped."""
+        ret = 0
+        # Try graceful shutdown at first, then send SIGTERM, then send SIGKILL.
+        for client, instances in enumerate(allinstances):
+            for instancenum, instance in enumerate(instances):
+                ret += 1
+                # instance[0], instance[1], instance[2] are, respectively:
+                # PID as string, executable path, list of its cmdline arguments
+                if client == 2:  # udhcpc: send SIGUSR2
+                    self.log.debug("stop_dhcp_client: sending SIGUSR2 to %s",
+                                   instance[0])
+                    os.kill(int(instance[0]), 12)
+                else:
+                    cmd = instance[1]
+                    if client == 0: # dhclient: rerun w/ same args prepending -r
+                        cmd += " -r " + " ".join(instance[2])
+                    elif client == 1: # pump: rerun with -i `iface` -r
+                        cmd += " -i " + iface + " -r"
+                    elif client == 3: # dhcpcd: rerun with -k `iface`
+                        cmd += " -k " + iface
+                    cmd = cmd.strip() # for some reason there's a trailing space
+                    self.log.debug("stop_dhcp_client: call \"%s\"", cmd)
+                    self.run(cmd)
+                time.sleep(5) # Give the client 5 seconds to cleanup and quit.
+                # pump is a daemon that always runs as a single instance, but
+                # kill all other instances of any client that are still left
+                if client == 1 and instancenum == 0:
+                    continue
+                if pidexist(instance[0]):
+                    os.kill(instance[0], 15)
+                    time.sleep(10) # Wait a generous 10s before sending SIGKILL
+                if pidexist(instance[0]):
+                    os.kill(instance[0], 9)
+        return ret
+
+    def start_dhcp_client(self, allinstances):
+        """Restart an instance of a previously killed DHCP client
+           on the `iface` interface. It is started with the same
+           command-line arguments with which it ran originally."""
+        # Assume that first instance of the first DHCP client we tried to
+        # stop is the one we want to restart.
+        for instances in allinstances:
+            for instance in instances:
+                cmd = " ".join([instance[1]] + instance[2]).strip()
+                self.log.debug("start_dhcp_client: call \"%s\"", cmd)
+                self.run(cmd)
+                return
+
+    def restart_dhcp_client(self, iface):
+        """Restart the system's DHCP client on the `iface` interface."""
+        def dhcp_client_instances(client):
+            # Find PID and cmdline of running DHCP client(s) on `iface`.
+            # Returns a list containg metadata for each running instance:
+            # [['PID1', '$0', ['$1', '$2', ... ]], ['PID2', '$0', [ $1, ... ]]]
+            ret = []
+            pids = [pid for pid in os.listdir("/proc/") if pid.isdigit()]
+            search = re.compile(r"^(.*\/)?%s\x00" % client).search
+            spaces = re.compile(r"\s").search
+            for pid in pids:
+                clpath = "/proc/%s/cmdline" % pid
+                if os.path.isfile(clpath) and os.access(clpath, os.R_OK):
+                    try:
+                        with open(clpath) as f:
+                            # `cl` is a str with null-separated fields for
+                            # (the path to) an executable and its arguments.
+                            # Any field may contain spaces. We need to put
+                            # quotes around the contents of space-containing
+                            # fields if we want to pass them in a str to
+                            # the shell-invoking self.run() later.
+                            cl = f.readline()
+                            if search(cl) and iface in cl:
+                                cmd = cl.split("\0")[0]
+                                if spaces(cmd):
+                                    cmd = "'" + cmd + "'"
+                                args = [arg if not spaces(arg)
+                                        else "\"" + arg + "\""
+                                        for arg in cl.split("\0")[1:]]
+                                ret.append([pid, cmd, args])
+                    except Exception:  #pylint:disable=broad-except
+                        pass
+            return ret
+
+        # Collect a list of lists returned by dhcp_client_instances().
+        allinstances = []
+        for client in ("dhclient", "pump", "udhcpc", "dhcpcd"):
+            allinstances.append(dhcp_client_instances(client))
+
+        if self.stop_dhcp_client(allinstances, iface):
+            self.start_dhcp_client(allinstances)
+        else:
+            self.log.warn("%s: did nothing, no DHCP client was running", iface)
 
     def setmac(self, ifname, mac):
         """Set interface `ifname` mac to `mac`, which may be either a packed
@@ -655,9 +733,8 @@ class EAPProxy(object):
     def on_wan_eap(self, eap):
         if not self.should_restart_dhcp(eap):
             return
-        if_vlan = self.args.if_wan + ".0"
-        self.log.info("%s: restarting DHCP client", if_vlan)
-        self.os.restart_dhcp_client(if_vlan)
+        self.log.info("%s: restarting DHCP client", self.args.vlan)
+        self.os.restart_dhcp_client(self.args.vlan)
 
     def should_restart_dhcp(self, eap):
         if self.args.restart_dhcp and eap.is_success:
