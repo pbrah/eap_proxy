@@ -7,43 +7,49 @@ Inspired by 1x_prox as posted here:
     AT&T Residential Gateway Bypass - True bridge mode!
 
 usage: eap_proxy [-h] [--ping-gateway] [--ignore-when-wan-up] [--ignore-start]
-                 [--ignore-logoff] [--restart-dhcp] [--set-mac] [--daemon]
-                 [--pidfile [PIDFILE]] [--syslog] [--promiscuous] [--debug]
-                 [--debug-packets]
+                 [--ignore-logoff] [--vlan IF_VLAN] [--restart-dhcp]
+                 [--set-mac] [--daemon] [--pidfile [PIDFILE]] [--syslog]
+                 [--promiscuous] [--debug] [--debug-packets]
                  IF_WAN IF_ROUTER
 
 positional arguments:
-  IF_WAN                interface of the AT&T ONT/WAN
-  IF_ROUTER             interface of the AT&T router
+  IF_WAN                interface connected to the WAN uplink
+  IF_ROUTER             interface connected to the ISP router
 
 optional arguments:
   -h, --help            show this help message and exit
 
-checking whether WAN is up:
-  --ping-gateway        normally the WAN is considered up if IF_WAN.0 has an
-                        IP address; this option additionally requires that
-                        there is a default route gateway that responds to a
-                        ping
+ checking whether WAN is up:
+  --ping-gateway        normally the WAN is considered up if IF_VLAN has an IP
+                        address; this option additionally requires that there
+                        is a default route gateway that responds to a ping
 
-ignoring router packets:
+ ignoring router packets:
   --ignore-when-wan-up  ignore router packets when WAN is up (see --ping-
                         gateway)
   --ignore-start        always ignore EAPOL-Start from router
   --ignore-logoff       always ignore EAPOL-Logoff from router
 
-configuring IF_WAN.0 VLAN:
+ configuring VLAN subinterface on IF_WAN:
+  --vlan IF_VLAN        VLAN ID or interface name of the VLAN subinterface on
+                        IF_WAN (e.g. '0' to use IF_WAN.0, 'vlan0' to use
+                        vlan0), or 'none' to use IF_WAN directly; if --vlan
+                        not specified, treated as though it were with IF_VLAN
+                        of 0
   --restart-dhcp        check whether WAN is up after receiving EAP-Success on
                         IF_WAN (see --ping-gateway); if not, restart system's
-                        DHCP client on IF_WAN.0
-  --set-mac             set IF_WAN.0's MAC (ether) address to router's MAC
-                        address
+                        DHCP client on IF_VLAN
 
-daemonization:
+ setting MAC address:
+  --set-mac             set IF_WAN and IF_VLAN's MAC (ether) address to
+                        router's MAC address
+
+ daemonization:
   --daemon              become a daemon; implies --syslog
   --pidfile [PIDFILE]   record pid to PIDFILE; default: /var/run/eap_proxy.pid
   --syslog              log to syslog instead of stderr
 
-debugging:
+ debugging:
   --promiscuous         place interfaces into promiscuous mode instead of
                         multicast
   --debug               enable debug-level logging
