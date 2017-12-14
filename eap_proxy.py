@@ -400,6 +400,8 @@ def set_vlan(args, vlanconfig="/proc/net/vlan/config"):
     if args.vlan == "none":
         args.vlan = args.if_wan
         return
+    elif args.vlan.isdigit():
+        args.vlan = str(int(args.vlan))
     # Parse the kernel VLAN configuration in /proc to check if IF_VLAN is
     # either the VLAN ID or the interface name of an existing VLAN on IF_WAN.
     # If the former, set IF_VLAN to the interface name of that VLAN.
