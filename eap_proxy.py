@@ -70,6 +70,7 @@ import sys
 import time
 import traceback
 from collections import namedtuple
+from distutils.spawn import find_executable
 from fcntl import ioctl
 from functools import partial
 
@@ -544,15 +545,27 @@ class LinuxOS(object):
         else:
             self.log.warn("%s: did nothing, no DHCP client was running", iface)
 
-    def setmac(self, ifname, mac):
-        """Set interface `ifname` mac to `mac`, which may be either a packed
-           string or in "aa:bb:cc:dd:ee:ff" format."""
+    def setmac(self, if_vlan, if_wan, mac):
+        """Set `if_vlan` and `if_wan` interfaces' MAC to `mac`, which may
+           be either a packed string or in "aa:bb:cc:dd:ee:ff" format."""
         if len(mac) == 6:
             mac = strmac(mac)
-        # iproute2. ifupdown probably shouldn't apply configs, e.g. if-up.d/*
-        self.run("/bin/ip link set dev %s down" % ifname)
-        self.run("/bin/ip %s hw ether %s" % (ifname, mac))
-        self.run("/bin/ip link set dev %s up" % ifname)
+        # just order the commands so it doesn't matter if if_vlan == if_wan
+        util = find_executable("ip"), find_executable("ifconfig")
+        if util[0] and os.access(util[0], os.X_OK):
+            self.run("%s link set dev %s down" % (util[0], if_vlan))
+            self.run("%s link set dev %s down" % (util[0], if_wan))
+            self.run("%s link set dev %s address %s" % (util[0], if_wan, mac))
+            self.run("%s link set dev %s address %s" % (util[0], if_vlan, mac))
+            self.run("%s link set dev %s up" % (util[0], if_wan))
+            self.run("%s link set dev %s up" % (util[0], if_vlan))
+        elif util[1] and os.access(util[1], os.X_OK):
+            self.run("%s %s down" % (util[1], if_vlan))
+            self.run("%s %s down" % (util[1], if_wan))
+            self.run("%s %s hw ether %s" % (util[1], if_wan, mac))
+            self.run("%s %s hw ether %s" % (util[1], if_vlan, mac))
+            self.run("%s %s up" % (util[1], if_wan))
+            self.run("%s %s up" % (util[1], if_vlan))
 
     @staticmethod
     def getmac(ifname):
@@ -723,12 +736,16 @@ class EAPProxy(object):
         if not args.set_mac:
             return
 
-        if_vlan = args.if_wan + ".0"
-        if self.os.getmac(if_vlan) == eap.src:
+        if self.os.getmac(args.vlan) == self.os.getmac(args.if_wan) == eap.src:
             return
 
-        self.log.info("%s: setting mac to %s", if_vlan, strmac(eap.src))
-        self.os.setmac(if_vlan, eap.src)
+        self.log.info("setting mac to %s", strmac(eap.src))
+        self.os.setmac(args.vlan, args.if_wan, eap.src)
+
+        if not self.os.getmac(args.vlan) == \
+               self.os.getmac(args.if_wan) == \
+               eap.src:
+            self.log.error("setting mac address failed")
 
     def on_wan_eap(self, eap):
         if not self.should_restart_dhcp(eap):
