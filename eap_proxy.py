@@ -870,6 +870,10 @@ def main():
     args = parse_args()
     log = make_logger(args.syslog, args.debug)
 
+    if os.geteuid() != 0:
+        log.error("eap_proxy must be started as root")
+        return 1
+
     try:
         set_vlan(args)
     except EnvironmentError as ex:
