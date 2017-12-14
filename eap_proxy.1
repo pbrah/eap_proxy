@@ -2,7 +2,7 @@
 .\" groff -man -Tascii eap_proxy.1
 .\" Pipe to col -bx to remove extra formatting from the page
 .\"
-.TH EAP_PROXY 1 "November 20, 2017" "eap_proxy" "EAP Proxy"
+.TH EAP_PROXY 1 "December 14, 2017" "eap_proxy" "EAP Proxy"
 .SH NAME
 eap_proxy \- EAP Proxy
 .SH SYNOPSIS
@@ -14,20 +14,22 @@ eap_proxy \- EAP Proxy
 .RB [ \-\^\-ignore\-start ]
 .br
 .RB [ \-\^\-ignore\-logoff ]
+.RB [ \-\^\-vlan
+\f[BI]IF_VLAN\fR]
 .RB [ \-\^\-restart\-dhcp ]
+.br
 .RB [ \-\^\-set\-mac ]
 .RB [ \-\^\-daemon ]
-.br
 .RB [ \-\^\-pidfile
-.RI [[ PIDFILE ]]
+[[\f[BI]PIDFILE\fR]]
 .RB [ \-\^\-syslog ]
+.br
 .RB [ \-\^\-promiscuous ]
 .RB [ \-\^\-debug ]
-.br
 .RB [ \-\^\-debug\-packets ]
 .br
-.I IF_WAN
-.I IF_ROUTER
+\f[BI]IF_WAN\fR
+\f[BI]IF_ROUTER\fR
 .SH DESCRIPTION
 .B eap_proxy
 proxies 802.1X EAPOL
@@ -37,16 +39,17 @@ frames between the Ethernet interfaces
 and
 .IR IF_ROUTER .
 .SH OPTIONS
-.SS "Required options"
+.SS "Required options (all others are optional)"
 .TP
 \f[BI]IF_WAN\fR
-Physical interface to which the AT&T ONT/WAN is connected.
+Interface to which the WAN uplink is connected.
 
-A VLAN named
-.IR IF_WAN \.0
-configured to get its IP address automatically via DHCP must also exist on it
+A VLAN configured to get its IP address automatically via DHCP
+may also exist on it
 (e.g. as
 .B eth0\.0
+or
+.B vlan0
 on an interface named
 .BR eth0 ).
 
@@ -55,10 +58,10 @@ See
 .BR EXAMPLES ,
 and
 .BR interfaces (5)
-for more information on how to configure a VLAN interface.
+for more information on how to configure a VLAN subinterface.
 .TP
 \f[BI]IF_ROUTER\fR
-Physical interface to which the AT&T Residential Gateway is connected.
+Interface to which the ISP router is connected.
 .SS "Help message"
 .TP
 .BR \-h ", " \-\^\-help
@@ -67,7 +70,7 @@ Print a help message.
 .TP
 .B \-\^\-ping\-gateway
 Normally the WAN is considered up if
-.IR IF_WAN \.0
+.I IF_VLAN
 has an IP address.
 .br
 This option additionally requires that
@@ -106,10 +109,157 @@ from the router.
 Once a device sends
 .BR EAPOL\-Logoff ,
 it must authenticate again before using the network for any non-EAP traffic.
-.SS "Configuring the \f[BI]IF_WAN\fR\fB\.0 VLAN interface\fR"
+.SS "Configuring the VLAN subinterface on \f[BI]IF_WAN\fR"
+.TP
+.B \-\^\-vlan
+\f[BI]IF_VLAN\fR
+.br
+VLAN ID or interface name of the VLAN subinterface on
+.I IF_WAN
+(e.g. \'0\', \'eth0.4\', 'vlan0\').
+The value of
+.I IF_VLAN
+that is passed to
+.B eap_proxy
+is a hint to influence what it uses for
+.I IF_VLAN
+internally.
+If
+.B \-\^\-vlan
+is specified,
+both
+.B \-\^\-vlan
+and
+.I IF_VLAN
+must be specified together.
+.I IF_VLAN
+may be a VLAN ID number
+(0 - 4094, inclusive),
+a network interface name,
+or \`none\`.
+
+If
+.I IF_VLAN
+is specified as a VLAN ID number,
+the system's VLAN configuration will be checked and the existing VLAN subinterface on
+.I IF_WAN
+with that VLAN ID will be used.
+For example,
+given that
+.I IF_WAN
+is
+.BR eth0 ,
+and
+.I IF_VLAN
+was specified as
+.BR 2 ,
+.B eap_proxy
+will change the value of
+.I IF_VLAN
+that it uses internally to point to the correct VLAN subinterface for your system.
+The existing VLAN subinterface on
+.B eth0
+with VLAN ID 2 could have been named
+.BR eth0.2 ,
+.BR eth0.0002 ,
+.BR vlan2 ,
+.BR vlan0002 ,
+or perhaps even something else.
+
+If
+.I IF_VLAN
+is specified as a network interface name,
+the system's VLAN configuration will be checked and that network interface
+will be used if it is an existing VLAN subinterface on
+.IR IF_WAN .
+For example,
+given that
+.I IF_WAN
+is
+.BR eth0 ,
+.I IF_VLAN
+was specified as
+.BR eth0.0 ,
+and
+.B eth0.0
+is actually present on the system,
+.B eap_proxy
+will use
+.B eth0.0
+as
+.I IF_VLAN.
+
+If
+.I IF_VLAN
+is specified as \'none\',
+.B eap_proxy
+will use
+.I IF_WAN
+directly as its internal value for
+.IR IF_VLAN .
+
+In the case that
+.B \-\^\-vlan
+is
+.I NOT
+specified at all,
+.B eap_proxy
+will behave by default as though it were called with
+.B \-\^\-vlan
+.BR 0 .
+For example,
+given that
+.I IF_WAN
+is
+.BR eth0 ,
+.B eap_proxy
+will change the value of
+.I IF_VLAN
+that it uses internally to point to the VLAN subinterface on
+.B eth0
+with VLAN ID 0,
+whether the system's name for it is
+.BR eth0.0 ,
+.BR eth0.0000 ,
+.BR vlan0 ,
+.BR vlan0000 ,
+or something else.
+However,
+if no such subinterface exists,
+this default for
+.I IF_VLAN
+will be treated as specified but invalid.
+
+Finally,
+in the error case that
+.I IF_VLAN
+is specified but invalid,
+.B eap_proxy
+will behave as though it were called with
+.B \-\^\-vlan
+.BR none ,
+and use
+.I IF_WAN
+directly.
+
+The addition of
+.B \-\^\-vlan
+is to accommodate the fact that although the majority of users
+with routers set to use VLAN ID 0 appear to be able to successfully use
+.B eap_proxy
+with no VLAN at all,
+some users have routers set to use a nonzero VLAN ID
+and may still need to use a VLAN with a corresponding nonzero VLAN ID.
+Configurations for older versions of
+.B eap_proxy
+that assumed the necessity and presence of
+a VLAN with VLAN ID 0 will continue to be usable with no changes.
 .TP
 .B \-\^\-restart\-dhcp
-Check whether WAN is up after receiving
+Check whether WAN
+(i.e.
+.IR IF_VLAN )
+is up after receiving
 .B EAP\-Success
 on
 .I IF_WAN
@@ -117,17 +267,21 @@ on
 .BR \-\^\-ping\-gateway ).
 .br
 If not,
-restart the system's DHCP client on the
-.IR IF_WAN \.0
-VLAN interface.
+restart the system's DHCP client on
+.IR IF_VLAN .
+.SS "Setting MAC address"
 .TP
 .B \-\^\-set\-mac
 Set
-.IR IF_WAN \.0's
+.I IF_WAN
+and
+.IR IF_VLAN 's
 MAC (Ethernet) address to the router's MAC address.
 .br
 Matching MAC addresses is probably required,
-but you may prefer to do it manually.
+but you may prefer to do it manually instead of having
+.B eap_proxy
+do it for you.
 .SS "Daemonization"
 .TP
 .B \-\^\-daemon
@@ -135,8 +289,8 @@ Become a daemon.
 Implies
 .BR \-\^\-syslog .
 .TP
-.B \-\^\-pidfile
-.RI [ PIDFILE ]
+.B "\-\^\-pidfile \fR[\f[BI]PIDFILE\fR]"
+.br
 Record
 .BR eap_proxy 's
 process identifier to
@@ -203,9 +357,18 @@ must contain
 .I IF_WAN
 and
 .IR IF_ROUTER ,
-the device names of the physical network interfaces connected to the AT&T ONT
-and the AT&T Residential Gateway.
+the device names of the network interfaces connected to the WAN uplink
+and the ISP router.
 Most users will only need to edit these two lines in the configuration file.
+.PP
+Users who must use a VLAN subinterface of
+.I IF_WAN
+with a nonzero VLAN ID in order to successfully use
+.B eap_proxy
+will also need to specify the VLAN ID or interface name
+by uncommenting and editing the
+.B \-\^\-vlan
+line.
 .PP
 If
 .I PIDFILE
@@ -230,30 +393,39 @@ See the
 section for more information about options.
 .SS "Interfaces and VLAN"
 .PP
-Both
 .I IF_WAN
 and
 .I IF_ROUTER
-must be physical network interfaces.
-There must also be a VLAN interface named
-.IR IF_WAN \.0
-on top of
+should be physical network interfaces for most users,
+but more exotic setups in which they are bridges
+(hopefully with a single port assigned)
+are now possible.
+There may also be a VLAN subinterface on
 .I IF_WAN
-that has VLAN ID 0.
+that has VLAN ID 0 to match the behavior of most users' routers,
+but a VLAN is not a requirement to use
+.BR eap_proxy ,
+with the probable exception of users whose routers are configured to use a nonzero VLAN ID.
 .PP
 For
 .B \-\^\-restart\-dhcp
 to work,
 at least
 .I IF_WAN
-and
-.IR IF_WAN \.0
-should be managed in
-.I /etc/network/interfaces
-instead of by
-.BR NetworkManager ,
-and
-.IR IF_WAN \.0
+(and,
+if present,
+also
+.IR IF_VLAN )
+should not be managed by
+.B NetworkManager
+(which uses an internal DHCP client),
+but in
+.IR "/etc/network/interfaces" .
+.I IF_WAN
+(or,
+if present,
+.IR IF_VLAN ,
+but not both)
 should be configured to get its IP via DHCP.
 .PP
 For more information on configuring network interfaces,
@@ -282,19 +454,20 @@ and local DHCP assignments are beyond this document's scope.
 The network interface to be used as
 .I IF_WAN
 is named
-.B eth0
-(implying that
-.IR IF_WAN \.0
-would be named
-.BR eth0\.0 ),
+.BR eth0 ,
 .IP *
 the interface to be used as
 .I IF_ROUTER
 is named
 .BR eth1 ,
+.IP *
+a VLAN subinterface named
+.B eth0.0
+will be created and used as
+.IR IF_VLAN ,
 and
 .IP *
-the MAC address of the AT&T Residential Gateway is
+the MAC address of the ISP router is
 .BR DE:AD:8B:AD:F0:0D .
 .SS "Desired behavior"
 .IP *
@@ -321,7 +494,7 @@ create a VLAN
 .SM below)
 named
 .B eth0\.0
-on top of
+as a subinterface on
 .B eth0
 with VLAN ID 0 that gets its IP via DHCP,
 .IP *
@@ -349,6 +522,15 @@ allow\-hotplug eth1
 iface eth1 inet manual\fR
 .fi
 .PP
+Now that definitions for the network interfaces are in
+.IR /etc/network/interfaces ,
+.B NetworkManager
+is most likely disabled on them.
+The MAC address set on
+.B eth0
+will be inherited by the VLAN subinterface
+.BR eth0.0 .
+.PP
 Some systems will hang for several minutes during boot while
 .B eth0.0
 tries and fails to get a DHCP assignment.
@@ -357,7 +539,7 @@ either edit the configuration file for your DHCP client
 so that it uses a sane value for DHCP timeout,
 and/or
 (if using
-.B systemd)
+.BR systemd )
 edit
 .I /etc/systemd/system/network-online.target.wants
 to do the same by adding something like
@@ -382,6 +564,13 @@ substituting the actual names of your interfaces.
 .B eth1
 .RI "[ " \.\.\. " ]"
 .fi
+.PP
+Because the VLAN ID of
+.B eth0.0
+is 0,
+explicitly configuring it as
+.I IF_VLAN
+is not required.
 .SS "Disabling NetworkManager"
 .PP
 The surest way to stop using
@@ -404,14 +593,33 @@ plugins=ifupdown,keyfile
 VLAN support is provided by the
 .B vlan
 package.
+
 VLAN autocreation is handled by the
 .I /etc/network/if\-pre\-up.d/vlan
 script,
-which will almost certainly need to be edited to add a special case for
-.IR IF_WAN \.0,
-explicitly specifying the parameters that it normally guesses from reading
+which normally guesses parameters for the VLAN name type,
+ID,
+and raw interface from reading
+.IR /etc/network/interfaces .
+
+At this point,
+the interface configuration in
 .I /etc/network/interfaces
-for the VLAN name type, ID, and underlying interface:
+will probably result in a VLAN subinterface on
+.B eth0
+named
+.BR eth0.0000 .
+
+.B eap_proxy
+now supports discovering and using this interface as
+.B IF_VLAN
+based on its VLAN ID of 0,
+but if the automatic creation of a VLAN subinterface named
+.B eth0.0
+is desired instead,
+it is necessary to also edit
+.I /etc/network/if\-pre\-up.d/vlan
+to supply the aforementioned parameters explicitly:
 .IP
 .nf
 case "$IFACE" in
@@ -450,7 +658,10 @@ Issue
 to read the manual page.
 .PP
 Setting up routing between
-.IR IF_WAN \.0
+.I IF_WAN
+(or,
+if used,
+.IR IF_VLAN )
 and another network interface is likely the next step,
 but will be left as an exercise for the reader.
 .PP
@@ -463,7 +674,8 @@ sections for more information.
 .SH FILES
 .TP
 .I /etc/eap_proxy.conf
-Default configuration file. See
+Default configuration file.
+See
 .B CONFIGURATION
 and
 .B EXAMPLES
@@ -474,6 +686,13 @@ Default initscript.
 See
 .B CONFIGURATION
 for more information.
+.TP
+.I /share/man/man1/eap_proxy.1.gz
+This manual file.
+.TP
+.I /usr/sbin/eap_proxy
+Program executable.
+
 .SH ERRATA
 The package and initscript are named
 .BR eap\-proxy .
