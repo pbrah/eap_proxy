@@ -1,5 +1,6 @@
 ### /etc/eap_proxy.conf: configuration file for EAP Proxy
 # See eap_proxy(1) for more information about these options.
+# To enable an option, uncomment it (remove any "#" at the front).
 
 ### You will probably only need to edit the lines after IF_WAN and IF_ROUTER.
 
@@ -11,7 +12,8 @@ wan0
 # IF_ROUTER
 rtr0
 
-### You will probably not need to edit anything below this line.
+### You will probably not need to edit anything below here...
+###     unless you need to explicitly set the VLAN subinterface to use.
 
 # Checking whether WAN is up
 --ping-gateway
@@ -21,8 +23,27 @@ rtr0
 --ignore-start
 --ignore-logoff
 
-# Configuring the IF_WAN.0 VLAN interface
+# Configuring the VLAN subinterface on IF_WAN
+# --vlan: By default, eap_proxy will act as though the --vlan 0 line were enabled,
+#         even if no --vlan line is enabled.
+#
+#         You can configure the VLAN by its VLAN ID or device name,
+#         or use IF_WAN directly by specifying "none".
+#
+#         Also, an invalid input for --vlan is the same as specifying "none".
+#
+#         This means that if no --vlan line is enabled, and you have no VLAN 0,
+#         eap_proxy will first try to use VLAN 0, and then fall back to using
+#         IF_WAN directly. For most users this will work fine.
+#
+#         Sorry if this is a little confusing; it's for compatibility's sake.
+# --vlan 0
+# --vlan 4
+# --vlan vlan0000
+# --vlan none
 --restart-dhcp
+
+# Setting MAC address
 --set-mac
 
 # Daemonization (enable only ONE of the --pidfile lines)

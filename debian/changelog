@@ -1,3 +1,13 @@
+eap-proxy (0.0.2) unstable; urgency=medium
+
+  * Rework handling interfaces and VLANs
+  * Rewrite restarting DHCP client
+  * Fix setting MAC addresses
+  * Quit if not running as root
+  * Handle padded numeric IF_VLAN
+
+ -- kangtastic <kangscinate@gmail.com>  Thu, 14 Dec 2017 19:20:32 -0800
+
 eap-proxy (0.0.1) unstable; urgency=medium
 
   * Initial Release.
