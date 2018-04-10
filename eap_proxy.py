@@ -704,7 +704,7 @@ class EAPProxy(object):
         log = self.log
         ifname = getifname(sock_in)
         if event != select.POLLIN:  # pylint:disable=no-member
-            raise IOError("[%s] unexpected poll event: %d", ifname, event)
+            raise IOError("[%s] unexpected poll event: %d" % (ifname, event))
 
         buf = sock_in.recv(2048)
 
