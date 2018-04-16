@@ -342,6 +342,7 @@ def daemonize():
 
 def make_logger(use_syslog=False, debug=False):
     """Return new logging.Logger object."""
+    # pylint:disable=redefined-variable-type
     if use_syslog:
         formatter = logging.Formatter("eap_proxy[%(process)d]: %(message)s")
         formatter.formatException = lambda *__: ''  # no stack trace to syslog
@@ -913,8 +914,8 @@ def main():
         except EnvironmentError:  # pylint:disable=broad-except
             log.exception("could not write pidfile: %s", strexc())
 
-    log.info("starting with interfaces IF_WAN=%s, IF_ROUTER=%s, IF_VLAN=%s" %
-             (args.if_wan, args.if_rtr, args.vlan))
+    log.info("starting with interfaces IF_WAN=%s, IF_ROUTER=%s, IF_VLAN=%s",
+             args.if_wan, args.if_rtr, args.vlan)
 
     EAPProxy(args, log).proxy_forever()
 
