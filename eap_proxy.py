@@ -60,8 +60,6 @@ optional arguments:
 import argparse
 import array
 import atexit
-import ctypes
-import ctypes.util
 import logging
 import logging.handlers
 import os
@@ -75,7 +73,12 @@ import subprocess
 import sys
 import time
 import traceback
+
 from collections import namedtuple
+from ctypes import byref, cast, CDLL, create_string_buffer, c_int, c_size_t
+from ctypes import c_ubyte, c_uint, c_uint32, c_ushort, c_void_p
+from ctypes import pointer, POINTER, sizeof, Structure
+from ctypes.util import find_library
 from distutils.spawn import find_executable
 from fcntl import ioctl
 from functools import partial
@@ -88,23 +91,64 @@ IFF_PROMISC = 0x100
 PACKET_ADD_MEMBERSHIP = 1
 PACKET_MR_MULTICAST = 0
 PACKET_MR_PROMISC = 1
+PACKET_AUXDATA = 8
 SIOCGIFADDR = 0x8915
 SIOCGIFFLAGS = 0x8913
 SIOCSIFFLAGS = 0x8914
 SOL_PACKET = 263
+TP_STATUS_VLAN_VALID = 16
 
 ### Sockets / Network Interfaces
 
-class struct_packet_mreq(ctypes.Structure):
+class struct_packet_mreq(Structure):
     # pylint:disable=too-few-public-methods
     _fields_ = (
-        ("mr_ifindex", ctypes.c_int),
-        ("mr_type", ctypes.c_ushort),
-        ("mr_alen", ctypes.c_ushort),
-        ("mr_address", ctypes.c_ubyte * 8))
+        ("mr_ifindex", c_int),
+        ("mr_type", c_ushort),
+        ("mr_alen", c_ushort),
+        ("mr_address", c_ubyte * 8))
 
+class struct_iovec(Structure):
+    # pylint:disable=too-few-public-methods
+    _fields_ = (
+        ("iov_base", c_void_p),
+        ("iov_len", c_size_t))
 
-if_nametoindex = ctypes.CDLL(ctypes.util.find_library('c')).if_nametoindex
+class struct_msghdr(Structure):
+    # pylint:disable=too-few-public-methods
+    _fields_ = (
+        ("msg_name", c_void_p),
+        ("msg_namelen", c_uint32),
+        ("msg_iov", POINTER(struct_iovec)),
+        ("msg_iovlen", c_size_t),
+        ("msg_control", c_void_p),
+        ("msg_controllen", c_size_t),
+        ("msg_flags", c_int))
+
+class struct_cmsghdr(Structure):
+    # pylint:disable=too-few-public-methods
+    _fields_ = (
+        ("cmsg_len", c_size_t),
+        ("cmsg_level", c_int),
+        ("cmsg_type", c_int))
+
+class struct_tpacket_auxdata(Structure):
+    # pylint:disable=too-few-public-methods
+    _fields_ = (
+        ("tp_status", c_uint),
+        ("tp_len", c_uint),
+        ("tp_snaplen", c_uint),
+        ("tp_mac", c_ushort),
+        ("tp_net", c_ushort),
+        ("tp_vlan_tci", c_ushort),
+        ("tp_padding", c_ushort))
+
+libc = CDLL(find_library('c'))
+if_nametoindex = libc.if_nametoindex
+if_nametoindex.retype = c_int
+recvmsg = libc.recvmsg
+recvmsg.argtypes = (c_int, POINTER(struct_msghdr), c_int)
+recvmsg.retype = c_int
 
 
 def addsockaddr(sock, address):
@@ -139,6 +183,49 @@ def rawsocket(ifname, poll=None, promisc=False):
     if poll is not None:
         poll.register(s, select.POLLIN)  # pylint:disable=no-member
     return s
+
+
+# c.f. github.com/floodlight/oftest/blob/master/src/python/oftest/afpacket.py
+def recv(sock, bufsize):
+    """Receive up to `bufsize` bytes from an AF_PACKET socket `sock`.
+       Uses kernel API function recvmsg() to also get PACKET_AUXDATA,
+       and reinserts the VLAN tag if found.
+    """
+    # pylint:disable=attribute-defined-outside-init, no-member
+    sock.setsockopt(SOL_PACKET, PACKET_AUXDATA, 1)
+    buf = create_string_buffer(bufsize)
+
+    ctrl_bufsize = sizeof(struct_cmsghdr) \
+                   + sizeof(struct_tpacket_auxdata) \
+                   + sizeof(c_size_t)
+    ctrl_buf = create_string_buffer(ctrl_bufsize)
+
+    iov = struct_iovec()
+    iov.iov_base = cast(buf, c_void_p)
+    iov.iov_len = bufsize
+
+    msghdr = struct_msghdr()
+    msghdr.msg_name = None
+    msghdr.msg_namelen = 0
+    msghdr.msg_iov = pointer(iov)
+    msghdr.msg_iovlen = 1
+    msghdr.msg_control = cast(ctrl_buf, c_void_p)
+    msghdr.msg_controllen = ctrl_bufsize
+    msghdr.msg_flags = 0
+
+    rv = recvmsg(sock.fileno(), byref(msghdr), 0)
+    if rv < 0:
+        raise RuntimeError("recvmsg() failed, returned %d" % rv)
+
+    # pylint:disable=unused-variable
+    cmsghdr = struct_cmsghdr.from_buffer(ctrl_buf)
+    aux = struct_tpacket_auxdata.from_buffer(ctrl_buf, sizeof(struct_cmsghdr))
+
+    if aux.tp_vlan_tci != 0 or aux.tp_status & TP_STATUS_VLAN_VALID:
+        tag = struct.pack("!HH", ETH_P_8021Q, aux.tp_vlan_tci)
+        return buf.raw[:12] + tag + buf.raw[12:rv]
+    else:
+        return buf.raw[:rv]
 
 
 def getifname(sock):
