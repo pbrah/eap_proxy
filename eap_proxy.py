@@ -86,6 +86,8 @@ from functools import partial
 ### Constants
 
 EAP_MULTICAST_ADDR = (0x01, 0x80, 0xc2, 0x00, 0x00, 0x03)
+ETH_P_8021Q = 0x8100  # 802.1Q VLAN Extended Header
+ETH_P_ALL = 0x0003  # Every packet
 ETH_P_PAE = 0x888e  # IEEE 802.1X (Port Access Entity)
 IFF_PROMISC = 0x100
 PACKET_ADD_MEMBERSHIP = 1
@@ -168,17 +170,15 @@ def addsockaddr(sock, address):
     sock.setsockopt(SOL_PACKET, PACKET_ADD_MEMBERSHIP, mreq)
 
 
-def rawsocket(ifname, poll=None, promisc=False):
+def rawsocket(ifname, poll=None, promisc=False, proto_id=ETH_P_PAE):
     """Return raw socket listening for 802.1X packets on `ifname` interface.
        The socket is configured for multicast mode on EAP_MULTICAST_ADDR.
+       Specify `proto_id` to listen for a different Ethernet Protocol ID.
        Specify `promisc` to enable promiscuous mode instead.
        Provide `poll` object to register socket to it POLLIN events.
     """
-    s = socket.socket(
-        socket.PF_PACKET,  # pylint:disable=no-member
-        socket.SOCK_RAW,
-        socket.htons(ETH_P_PAE))
-    s.bind((ifname, 0))
+    s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW)
+    s.bind((ifname, proto_id))
     addsockaddr(s, None if promisc else EAP_MULTICAST_ADDR)
     if poll is not None:
         poll.register(s, select.POLLIN)  # pylint:disable=no-member
@@ -756,10 +756,11 @@ class EAPPacket(namedtuple("EAPPacket", "code id length data")):
 
 class EAPProxy(object):
 
-    def __init__(self, args, log):
+    def __init__(self, args, log, vid=None):
         self.args = args
         self.os = LinuxOS(log)
         self.log = log
+        self.vid = vid  # VLAN ID that RG uses (and expects?)
 
     def proxy_forever(self):
         log = self.log
@@ -778,7 +779,9 @@ class EAPProxy(object):
     def proxy_loop(self):
         args = self.args
         poll = select.poll()  # pylint:disable=no-member
-        s_rtr = rawsocket(args.if_rtr, poll=poll, promisc=args.promiscuous)
+        # VLAN tag is only found in PACKET_AUXDATA if EtherType == ETH_P_ALL
+        s_rtr = rawsocket(args.if_rtr, poll=poll, promisc=args.promiscuous,
+                          proto_id=ETH_P_ALL)
         s_wan = rawsocket(args.if_wan, poll=poll, promisc=args.promiscuous)
         socks = {s.fileno(): s for s in (s_rtr, s_wan)}
         on_poll_event = partial(self.on_poll_event, s_rtr=s_rtr, s_wan=s_wan)
@@ -789,20 +792,41 @@ class EAPProxy(object):
                 on_poll_event(socks[fd], event)
 
     def on_poll_event(self, sock_in, event, s_rtr, s_wan):
+        # Convert the first network-ordered short in a packed string to an int
+        def ntois(data):
+            return struct.unpack("!H", data[:2])[0]
+
         log = self.log
         ifname = getifname(sock_in)
+
         if event != select.POLLIN:  # pylint:disable=no-member
             raise IOError("[%s] unexpected poll event: %d" % (ifname, event))
 
-        buf = sock_in.recv(2048)
+        buf = None
+        tagged = False
+
+        if sock_in == s_rtr:
+            buf = recv(sock_in, 2048)
+            tagged = ntois(buf[12:14]) == ETH_P_8021Q
+            if ntois(buf[16:18] if tagged else buf[12:14]) != ETH_P_PAE:
+                return
+        else:
+            # Setting ETH_P_ALL on WAN socket would devour CPU
+            buf = sock_in.recv(2048)
 
         if self.args.debug_packets:
-            log.debug("%s: recv %d bytes:\n%s", ifname, len(buf), strbuf(buf))
+            log.debug("on %s: recv %d bytes:\n%s",
+                      ifname, len(buf), strbuf(buf))
 
-        eap = EAPFrame.from_buf(buf)
+        # Pass buffer to EAPFrame with VLAN tag stripped
+        eap = EAPFrame.from_buf(buf[:12] + buf[16:] if tagged else buf)
         log.debug("%s: %s", ifname, eap)
 
         if sock_in == s_rtr:
+            if tagged and self.vid is None:
+                self.vid = ntois(buf[14:16]) & 0xfff
+                log.debug("RG sending tags, vid set to %d", self.vid)
+
             sock_out = s_wan
             self.on_router_eap(eap)
             if self.should_ignore_router_eap(eap):
@@ -811,11 +835,20 @@ class EAPProxy(object):
         else:
             sock_out = s_rtr
             self.on_wan_eap(eap)
+            # If RG expects tagged replies, create & insert new tag here
+            if self.vid >= 0:
+                tag = struct.pack("!HH", ETH_P_8021Q, self.vid)
+                buf = buf[:12] + tag + buf[12:]
 
         log.info("%s: %s > %s", ifname, eap, getifname(sock_out))
-        nbytes = sock_out.send(buf)
-        log.debug("%s: sent %d bytes", getifname(sock_out), nbytes)
 
+        nbytes = sock_out.send(buf)
+
+        if self.args.debug_packets:
+            log.debug("to %s: sent %d bytes:\n%s",
+                      getifname(sock_out), nbytes, strbuf(buf))
+        else:
+            log.debug("to %s: sent %d bytes", getifname(sock_out), nbytes)
 
     def should_ignore_router_eap(self, eap):
         args = self.args
