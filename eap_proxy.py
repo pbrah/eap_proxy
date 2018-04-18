@@ -60,6 +60,7 @@ optional arguments:
 import argparse
 import array
 import atexit
+import fcntl
 import logging
 import logging.handlers
 import os
@@ -80,23 +81,27 @@ from ctypes import c_ubyte, c_uint, c_uint32, c_ushort, c_void_p
 from ctypes import pointer, POINTER, sizeof, Structure
 from ctypes.util import find_library
 from distutils.spawn import find_executable
-from fcntl import ioctl
 from functools import partial
 
 ### Constants
 
+ARPHRD_ETHER = 1
 EAP_MULTICAST_ADDR = (0x01, 0x80, 0xc2, 0x00, 0x00, 0x03)
 ETH_P_8021Q = 0x8100  # 802.1Q VLAN Extended Header
 ETH_P_ALL = 0x0003  # Every packet
 ETH_P_PAE = 0x888e  # IEEE 802.1X (Port Access Entity)
+IFF_UP = 1
 IFF_PROMISC = 0x100
+IFNAMSIZ = 15  # Actually 16, but there'll be a terminating NUL
 PACKET_ADD_MEMBERSHIP = 1
 PACKET_MR_MULTICAST = 0
 PACKET_MR_PROMISC = 1
 PACKET_AUXDATA = 8
 SIOCGIFADDR = 0x8915
 SIOCGIFFLAGS = 0x8913
+SIOCGIFHWADDR = 0x8927
 SIOCSIFFLAGS = 0x8914
+SIOCSIFHWADDR = 0x8924
 SOL_PACKET = 263
 TP_STATUS_VLAN_VALID = 16
 
@@ -233,6 +238,76 @@ def getifname(sock):
     return sock.getsockname()[0]
 
 
+# Fun with ioctls: Kernel networking API structure reference
+#
+# c.f. netdevice(7); also refer to the documentation for the ioctls we use
+#
+# struct ifreq {
+#    char ifr_name[IFNAMSIZ]; /* Interface name */
+#    union {
+#        struct sockaddr ifr_addr;    /* SIOCGIFADDR */
+#        [ ... ]
+#        struct sockaddr ifr_hwaddr;  /* SIOCGIFHWADDR, SIOCSIFHWADDR */
+#        short           ifr_flags;   /* SIOCGIFFLAGS, SIOCSIFFLAGS */
+#        [ ... ]
+#    };
+# };
+#
+# c.f. https://beej.us/guide/bgnet/html/multi/sockaddr_inman.html
+#
+# // All pointers to socket address structures are often cast to pointers
+# // to this type before use in various functions and system calls:
+#
+# struct sockaddr {
+#     unsigned short    sa_family;    // address family, AF_xxx
+#     char              sa_data[14];  // 14 bytes of protocol address
+# };
+#
+# // IPv4 AF_INET sockets:
+#
+# struct sockaddr_in {
+#     short            sin_family;   // e.g. AF_INET, AF_INET6
+#     unsigned short   sin_port;     // e.g. htons(3490)
+#     struct in_addr   sin_addr;     // see struct in_addr, below
+#     char             sin_zero[8];  // zero this if you want to
+# };
+#
+# struct in_addr {
+#     unsigned long s_addr;          // load with inet_pton()
+# };
+def s_ioctl(ioctl, ifreq):
+    """Create a socket and use an `ioctl` on it, passing `ifreq`.
+       Return the resulting ifreq."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ret = fcntl.ioctl(sock, ioctl, ifreq)
+    except IOError:
+        raise
+    finally:
+        sock.close()
+    return ret
+
+
+def ifreq_ifr_addr(ifname):
+    """Return a packed string representing a struct ifreq for `ifname`.
+       Its second field is a struct sockaddr_in with sin_family set to
+       AF_INET and its other fields null."""
+    return struct.pack("%dsxh14x" % IFNAMSIZ, ifname, socket.AF_INET)
+
+
+def ifreq_ifr_hwaddr(ifname, mac="\0"):
+    """Return a packed string representing a struct ifreq for `ifname`.
+       Its second field is a struct sockaddr with sa_family set to
+       ARPHRD_ETHER and sa_data[0:6] set to the packed string `mac`."""
+    return struct.pack("%dsxH6s8x" % IFNAMSIZ, ifname, ARPHRD_ETHER, mac)
+
+
+def ifreq_ifr_flags(ifname, flags=0):
+    """Return a packed string representing a struct ifreq for `ifname`.
+       Its second field is a short set to the int `flags`."""
+    return struct.pack("%dsxh" % IFNAMSIZ, ifname, flags)
+
+
 def getifaddr(ifname):
     """Return IP addr of `ifname` interface in 1.2.3.4 notation
        or None if no IP is assigned or other IOError occurs.
@@ -252,6 +327,22 @@ def getifhwaddr(ifname):
         s = f.readline()
     octets = s.split(':')
     return ''.join(chr(int(x, 16)) for x in octets)
+
+
+def setifhwaddr(ifname, mac):
+    """Set MAC address for `ifname` to the packed string `mac`."""
+    s_ioctl(SIOCSIFHWADDR, ifreq_ifr_hwaddr(ifname, mac))
+
+
+def getifflags(ifname):
+    """Return network device flags on `ifname` as an int."""
+    return struct.unpack("h", s_ioctl(SIOCGIFFLAGS,
+                                      ifreq_ifr_flags(ifname))[16:18])[0]
+
+
+def setifflags(ifname, flags):
+    """Set network device flags on `ifname` to the int `flags`."""
+    s_ioctl(SIOCSIFFLAGS, ifreq_ifr_flags(ifname, flags))
 
 
 def getdefaultgatewayaddr():
