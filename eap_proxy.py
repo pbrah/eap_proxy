@@ -80,7 +80,6 @@ from ctypes import byref, cast, CDLL, create_string_buffer, c_int, c_size_t
 from ctypes import c_ubyte, c_uint, c_uint32, c_ushort, c_void_p
 from ctypes import pointer, POINTER, sizeof, Structure
 from ctypes.util import find_library
-from distutils.spawn import find_executable
 from functools import partial
 
 ### Constants
@@ -312,21 +311,16 @@ def getifaddr(ifname):
     """Return IP addr of `ifname` interface in 1.2.3.4 notation
        or None if no IP is assigned or other IOError occurs.
     """
-    # pylint:disable=attribute-defined-outside-init
-    ifreq = "%-32s" % (ifname + "\0")
     try:
-        result = ioctl(socket.socket(), SIOCGIFADDR, ifreq)
+        rv = s_ioctl(SIOCGIFADDR, ifreq_ifr_addr(ifname))
     except IOError:
         return None
-    return socket.inet_ntoa(result[20:24])
+    return socket.inet_ntoa(rv[20:24])
 
 
 def getifhwaddr(ifname):
     """Return MAC address for `ifname` as a packed string."""
-    with open("/sys/class/net/%s/address" % ifname) as f:
-        s = f.readline()
-    octets = s.split(':')
-    return ''.join(chr(int(x, 16)) for x in octets)
+    return s_ioctl(SIOCGIFHWADDR, ifreq_ifr_hwaddr(ifname))[18:24]
 
 
 def setifhwaddr(ifname, mac):
@@ -409,6 +403,15 @@ def pingaddr(ipaddr, data='', timeout=1.0, strict=False):
     return False
 
 ### Helpers
+
+def setmac(if_vlan, if_wan, mac):
+    """Set `if_vlan` and `if_wan` interfaces' MAC to packed string `mac`."""
+    setifflags(if_vlan, getifflags(if_vlan) & 0xffff ^ IFF_UP)
+    setifflags(if_wan, getifflags(if_wan) & 0xffff ^ IFF_UP)
+    setifhwaddr(if_wan, mac)
+    setifhwaddr(if_vlan, mac)
+    setifflags(if_wan, getifflags(if_wan) | IFF_UP)
+    setifflags(if_vlan, getifflags(if_vlan) | IFF_UP)
 
 def strbuf(buf):
     """Return `buf` formatted as a hex dump (like tcpdump -xx)."""
@@ -732,33 +735,6 @@ class LinuxOS(object):
         else:
             self.log.warn("%s: did nothing, no DHCP client was running", iface)
 
-    def setmac(self, if_vlan, if_wan, mac):
-        """Set `if_vlan` and `if_wan` interfaces' MAC to `mac`, which may
-           be either a packed string or in "aa:bb:cc:dd:ee:ff" format."""
-        if len(mac) == 6:
-            mac = strmac(mac)
-        # just order the commands so it doesn't matter if if_vlan == if_wan
-        util = find_executable("ip"), find_executable("ifconfig")
-        if util[0] and os.access(util[0], os.X_OK):
-            self.run("%s link set dev %s down" % (util[0], if_vlan))
-            self.run("%s link set dev %s down" % (util[0], if_wan))
-            self.run("%s link set dev %s address %s" % (util[0], if_wan, mac))
-            self.run("%s link set dev %s address %s" % (util[0], if_vlan, mac))
-            self.run("%s link set dev %s up" % (util[0], if_wan))
-            self.run("%s link set dev %s up" % (util[0], if_vlan))
-        elif util[1] and os.access(util[1], os.X_OK):
-            self.run("%s %s down" % (util[1], if_vlan))
-            self.run("%s %s down" % (util[1], if_wan))
-            self.run("%s %s hw ether %s" % (util[1], if_wan, mac))
-            self.run("%s %s hw ether %s" % (util[1], if_vlan, mac))
-            self.run("%s %s up" % (util[1], if_wan))
-            self.run("%s %s up" % (util[1], if_vlan))
-
-    @staticmethod
-    def getmac(ifname):
-        """Return MAC address for `ifname` as a packed string."""
-        return getifhwaddr(ifname)
-
 ### EAP frame/packet decoding
 # c.f. https://github.com/the-tcpdump-group/tcpdump/blob/master/print-eap.c
 
@@ -956,15 +932,13 @@ class EAPProxy(object):
         if not args.set_mac:
             return
 
-        if self.os.getmac(args.vlan) == self.os.getmac(args.if_wan) == eap.src:
+        if getifhwaddr(args.vlan) == getifhwaddr(args.if_wan) == eap.src:
             return
 
         self.log.info("setting mac to %s", strmac(eap.src))
-        self.os.setmac(args.vlan, args.if_wan, eap.src)
+        setmac(args.vlan, args.if_wan, eap.src)
 
-        if not self.os.getmac(args.vlan) == \
-               self.os.getmac(args.if_wan) == \
-               eap.src:
+        if not getifhwaddr(args.vlan) == getifhwaddr(args.if_wan) == eap.src:
             self.log.error("setting mac address failed")
 
     def on_wan_eap(self, eap):
