@@ -1,3 +1,14 @@
+# **eap_proxy-udmpro**
+This is a containerized version of eap_proxy bsed off of kangtastic's linux version of eap_proxy.  Link to his project can be found below.
+https://github.com/kangtastic/eap_proxy
+
+This is just a quick description of how to ge this up an running.  I might add more details later but for now, the quickest way to get your UDM Pro bypassing the ATT proxy is to run this container via ssh.  You'll need to attach the ONT to port 9(eth8) and the ATT router to port 10 (eth9).  You'll also need a gigabit SFP in port 10 before you can attach your modem.  Below is the docker command to get this running.
+```
+docker run --privileged --network=host --name=eap_proxy-udmpro --log-driver=json-file --restart unless-stopped -d -ti pbrah/eap_proxy-udmpro:v1.0 --ping-gateway --ignore-when-wan-up --ignore-start --ignore-logoff --set-mac eth8 eth9
+```
+
+
+
 # **eap_proxy**
 
 Inspired by 1x_prox as posted here:
