@@ -14,6 +14,10 @@ Below is the docker command to get this running.
 docker run --privileged --network=host --name=eap_proxy-udmpro --log-driver=json-file --restart unless-stopped -d -ti pbrah/eap_proxy-udmpro:v1.0 --ping-gateway --ignore-when-wan-up --ignore-start --ignore-logoff --set-mac eth8 eth9
 ```
 
+You can check the logs of your container to see if it is working, sometimes there might be an error at first but I find after a minute or so it will authenticate properly.
+```
+docker logs -f eap_proxy-udmpro
+```
 
 
 # **eap_proxy**
