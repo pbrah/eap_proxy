@@ -1,4 +1,5 @@
 # **eap_proxy-udmpro**
+## **Running**
 This is a containerized version of eap_proxy bsed off of kangtastic's linux version of eap_proxy.  Link to his project can be found below.
 https://github.com/kangtastic/eap_proxy
 
@@ -19,7 +20,7 @@ You can check the logs of your container to see if it is working, sometimes ther
 docker logs -f eap_proxy-udmpro
 ```
 
-# **Create your own docker image**
+## **Create your own docker image**
 For anyone that wants to create their own docker image, I've provided brief instructions below.
 
 1. grab docker/Dockerfile and upload it to /root/docker/ on the UDM Pro
@@ -29,7 +30,7 @@ For anyone that wants to create their own docker image, I've provided brief inst
 cd /root/docker/
 docker build --network=host -t pbrah/eap_proxy-udmpro:v1.0 .
 ```
-# **eap_proxy**
+# **Kangtastic's eap_proxy original README.md below**
 
 Inspired by 1x_prox as posted here:
 
