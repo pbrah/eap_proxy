@@ -19,7 +19,16 @@ You can check the logs of your container to see if it is working, sometimes ther
 docker logs -f eap_proxy-udmpro
 ```
 
+# **Create your own docker image**
+For anyone that wants to create their own docker image, I've provided brief instructions below.
 
+1. grab docker/Dockerfile and upload it to /root/docker/ on the UDM Pro
+2. download the latest release of eap_proxy from the releases section and put that in /root/docker on the UDM Pro
+3. Build image
+```
+cd /root/docker/
+docker build --network=host -t pbrah/eap_proxy-udmpro:v1.0 .
+```
 # **eap_proxy**
 
 Inspired by 1x_prox as posted here:
