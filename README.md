@@ -5,7 +5,7 @@
 * Created a fixit.py to manually fix the database
 
 *v1.0*
-Initial release
+* Initial release
 
 ## **Running**
 This is a containerized version of eap_proxy based off of kangtastic's linux version of eap_proxy.  Link to his project can be found below.
