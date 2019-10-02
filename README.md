@@ -40,7 +40,7 @@ docker build --network=host -t pbrah/eap_proxy-udmpro:v1.1 .
 ```
 
 ## **Troubleshooting**
-If your controller is lost in the UDM Pro menu, you can run fixit.py to ensure there are no duplicates from within the docker container.
+If your controller is lost in the UDM Pro menu, you can run fixit.py to ensure there are no duplicates from within the docker container.  If you are impatient you can also restart the unifi controller or reboot your udm to speed up redection.  If you restart the Unifi controller from the command line, sometimes it will spit out some exceptions.  As far as I can tell these are harmless and can be ignored.
 ```
 # docker exec -ti eap_proxy-udmpro fixit.py eth8
 'Listing current ethernet_table:'
@@ -87,6 +87,11 @@ If your controller is lost in the UDM Pro menu, you can run fixit.py to ensure t
  {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth7', u'num_port': 1},
  {u'mac': u'14:ed:bb:xx:xx:x1', u'name': u'eth8', u'num_port': 1}]
 ''
+# /etc/init.d/S95unifi restart
+unifi: Stopping Ubiquiti UniFi Controller unifi
+unifi: Starting Ubiquiti UniFi Controller unifi
+#
+
 ```
 
 
