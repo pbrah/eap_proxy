@@ -16,7 +16,7 @@ This is just a quick description of how to get this up an running.  I might add 
 
 You'll need internet on your UDM Pro before you can run this so you can pull the image with the following command.
 ```
-docker pull pbrah/eap_proxy-udmpro:v1.0
+docker pull pbrah/eap_proxy-udmpro:v1.1
 ```
 
 Below is the docker command to get this running.
