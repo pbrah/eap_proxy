@@ -38,6 +38,9 @@ For anyone that wants to create their own docker image, I've provided brief inst
 cd /root/docker/
 docker build --network=host -t pbrah/eap_proxy-udmpro:v1.1 .
 ```
+
+## troubleshooting
+```
 # docker exec -ti eap_proxy-udmpro fixit.py eth8
 'Listing current ethernet_table:'
 [{u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth9', u'num_port': 1},
