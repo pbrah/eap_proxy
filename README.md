@@ -39,7 +39,8 @@ cd /root/docker/
 docker build --network=host -t pbrah/eap_proxy-udmpro:v1.1 .
 ```
 
-## troubleshooting
+## **Troubleshooting**
+If your controller is lost in the UDM Pro menu, you can run fixit.py to ensure there are no duplicates from within the docker container.
 ```
 # docker exec -ti eap_proxy-udmpro fixit.py eth8
 'Listing current ethernet_table:'
@@ -88,10 +89,6 @@ docker build --network=host -t pbrah/eap_proxy-udmpro:v1.1 .
 ''
 ```
 
-## **Troubleshooting**
-If your controller is lost in the UDM Pro menu, you can run fixit.py to ensure there are no duplicates from within the docker container.
-```
-docker exec -ti eap_proxy-udmpro fixit.py eth8
 
 # **Kangtastic's eap_proxy original README.md below**
 
