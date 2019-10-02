@@ -1,4 +1,11 @@
 # **eap_proxy-udmpro**
+## **Changelog**
+*v1.1*
+* added option **--update-mongodb** for UDM Pro users to avoid the lost Unifi controller bug
+* Created a fixit.py to manually fix the database
+*v1.0*
+Initial release
+
 ## **Running**
 This is a containerized version of eap_proxy based off of kangtastic's linux version of eap_proxy.  Link to his project can be found below.
 
@@ -13,7 +20,7 @@ docker pull pbrah/eap_proxy-udmpro:v1.0
 
 Below is the docker command to get this running.
 ```
-docker run --privileged --network=host --name=eap_proxy-udmpro --log-driver=json-file --restart unless-stopped -d -ti pbrah/eap_proxy-udmpro:v1.0 --ping-gateway --ignore-when-wan-up --ignore-start --ignore-logoff --set-mac eth8 eth9
+docker run --privileged --network=host --name=eap_proxy-udmpro --log-driver=json-file --restart unless-stopped -d -ti pbrah/eap_proxy-udmpro:v1.1 --update-mongodb --ping-gateway --ignore-when-wan-up --ignore-start --ignore-logoff --set-mac eth8 eth9
 ```
 
 You can check the logs of your container to see if it is working, sometimes there might be an error at first but I find after a minute or so it will authenticate properly.
@@ -24,13 +31,64 @@ docker logs -f eap_proxy-udmpro
 ## **Create your own docker image**
 For anyone that wants to create their own docker image, I've provided brief instructions below.
 
-1. grab docker/Dockerfile and upload it to /root/docker/ on the UDM Pro
-2. download the latest release of eap_proxy from the releases section and put that in /root/docker on the UDM Pro
-3. Build image
+1. copy all files in docker/ and upload them to /root/docker/ on the UDM Pro
+2. Build image
 ```
 cd /root/docker/
-docker build --network=host -t pbrah/eap_proxy-udmpro:v1.0 .
+docker build --network=host -t pbrah/eap_proxy-udmpro:v1.1 .
 ```
+# docker exec -ti eap_proxy-udmpro fixit.py eth8
+'Listing current ethernet_table:'
+[{u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth9', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth10', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth0', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth1', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth2', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth3', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth4', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth5', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth6', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth7', u'num_port': 1},
+ {u'mac': u'14:ed:bb:xx:xx:x1', u'name': u'eth8', u'num_port': 1}]
+''
+'Deleting all entries for wan interface:'
+''
+'eth8'
+''
+[{u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth9', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth10', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth0', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth1', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth2', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth3', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth4', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth5', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth6', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth7', u'num_port': 1}]
+''
+'Inserting single entry for wan interface'
+''
+'eth8'
+''
+[{u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth9', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth10', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth0', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth1', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth2', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth3', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth4', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth5', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth6', u'num_port': 1},
+ {u'mac': u'74:83:c2:xx:xx:xx', u'name': u'eth7', u'num_port': 1},
+ {u'mac': u'14:ed:bb:xx:xx:x1', u'name': u'eth8', u'num_port': 1}]
+''
+```
+
+## **Troubleshooting**
+If your controller is lost in the UDM Pro menu, you can run fixit.py to ensure there are no duplicates from within the docker container.
+```
+docker exec -ti eap_proxy-udmpro fixit.py eth8
+
 # **Kangtastic's eap_proxy original README.md below**
 
 Inspired by 1x_prox as posted here:
