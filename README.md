@@ -1,4 +1,11 @@
 # **eap_proxy-udmpro**
+
+## UPDATE 03.07.2020
+For v1.6.3 and newer you need to run your container with podman instead which changes the command slightly.  Below is an example of how to do this.  Keep in mind that currently there is an alias for docker to point to the podman executable on the UDM Pro since it was made to be a drop in replacement for docker commands.  I would still run this with the podman executable just in case that alias goes away in the future.
+```
+podman run --privileged --network=host --name=eap_proxy-udmpro --log-driver=k8s-file --restart always -d -ti pbrah/eap_proxy-udmpro:v1.1 --update-mongodb --ping-gateway --ignore-when-wan-up --ignore-start --ignore-logoff --set-mac eth8 eth9
+```
+
 ## **Changelog**
 *v1.1*
 * added option **--update-mongodb** for UDM Pro users to avoid the lost Unifi controller bug
