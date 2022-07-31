@@ -6,7 +6,13 @@ For v1.6.3 and newer you need to run your container with podman instead which ch
 podman run --privileged --network=host --name=eap_proxy-udmpro --log-driver=k8s-file --restart always -d -ti pbrah/eap_proxy-udmpro:v1.1 --update-mongodb --ping-gateway --ignore-when-wan-up --ignore-start --ignore-logoff --set-mac eth8 eth9
 ```
 
+You also may want to have this automatically come back up after a reboot. Assuming you've already installed [the on-boot script from unifi-utilities/unifios-utilities](https://github.com/unifi-utilities/unifios-utilities/blob/main/on-boot-script/README.md#install), place the included `10-run-eap-proxy.sh` into `/mnt/data/on_boot.d/` on your UDMP. 
+
 ## **Changelog**
+
+*v1.2*
+* added a script for persistence on reboot
+
 *v1.1*
 * added option **--update-mongodb** for UDM Pro users to avoid the lost Unifi controller bug
 * Created a fixit.py to manually fix the database
